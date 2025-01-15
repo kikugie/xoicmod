@@ -116,10 +116,13 @@ public class JukeboxFiles {
             return;
         }
 
-        ByteBuffer buffer = ByteBuffer.allocate(3).order(ByteOrder.LITTLE_ENDIAN);
+        // First 4 bytes are assigned to the paused state, track and offset info
+        ByteBuffer buffer = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
+        buffer.put((byte) (song.paused ? 1 : 0));
         buffer.put(song.current.track());
         buffer.putShort(song.current.offset());
 
+        // Modify only the required bytes
         try (RandomAccessFile file = new RandomAccessFile(songFile.toFile(), "rwd")) {
             file.write(buffer.array());
         }
@@ -132,19 +135,21 @@ public class JukeboxFiles {
 
     public static void writeSongState(JukeboxSong song) throws Exception {
         Path songFile = CONFIG.resolve("current.jukebox");
+        // Flatten notes into one array
         byte[] flattened = new byte[song.notes[0].length * song.notes.length];
         for (int i = 0; i < song.notes.length; i++)
             System.arraycopy(song.notes[i], 0, flattened, i * song.notes[0].length, song.notes[i].length);
 
+        // Compress notes
         COMPRESSOR.setInput(flattened);
         COMPRESSOR.finish();
-
         byte[] compressed = new byte[flattened.length];
         int length = COMPRESSOR.deflate(compressed);
         COMPRESSOR.reset();
         if (length == 0) throw new IllegalStateException("Failed to compress song");
         LOGGER.info("Compressed song %d -> %d bytes".formatted(flattened.length, length));
 
+        // Write song state and compressed notes
         ByteBuffer buffer = ByteBuffer.allocate(length + 4).order(ByteOrder.LITTLE_ENDIAN);
         buffer.put((byte) (song.paused ? 1 : 0));
         buffer.put(song.current.track());
@@ -158,6 +163,7 @@ public class JukeboxFiles {
         Path songFile = CONFIG.resolve("current.jukebox");
         if (!Files.exists(songFile)) return null;
 
+        // Read track state and note data
         ByteBuffer buffer = ByteBuffer.wrap(Files.readAllBytes(songFile)).order(ByteOrder.LITTLE_ENDIAN);
         boolean paused = buffer.get() == 1;
         byte track = buffer.get();
@@ -165,6 +171,7 @@ public class JukeboxFiles {
         byte[] compressed = new byte[buffer.remaining()];
         buffer.get(compressed);
 
+        // Decompress notes
         ByteArrayOutputStream stream = new ByteArrayOutputStream();
         DECOMPRESSOR.setInput(compressed);
         int length = 0;
@@ -178,6 +185,7 @@ public class JukeboxFiles {
         if (length % 6 != 0) throw new IllegalStateException("Invalid song length %d".formatted(length));
         LOGGER.info("Decompressed song %d -> %d bytes".formatted(compressed.length, length));
 
+        // Unwrap notes into 6 tracks
         byte[] flattened = stream.toByteArray();
         byte[][] notes = new byte[6][length / 6];
         for (int i = 0; i < notes.length; i++)
