@@ -55,7 +55,7 @@ public class JukeboxSong implements Iterator<JukeboxSong.Selection> {
 
         byte j = 0;
         for (int i = current.offset; i < track.length; i += 4) {
-            if (j >= notes.length) break;
+            if (j >= items.length) break;
             byte note = track[i];
             if (note != -1) items[j] = Objects.requireNonNull(mappings[note + 1], "Invalid note id: %d".formatted(note + 1));
             j++;
